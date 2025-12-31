@@ -13,7 +13,7 @@
   <div id="root"></div>
 
   <script type="text/babel">
-    const { useState, useEffect } = React;
+    const { useState, useEffect, useRef } = React;
 
     const TrumpetQuiz = () => {
       // All notes with both sharps and flats as separate entries
@@ -72,8 +72,16 @@
         { name: 'F', displayName: 'High F', line: 7.5, ledger: true, accidental: '', fingering: [1, 0, 0] },
       ];
 
-      const [minNoteIndex, setMinNoteIndex] = useState(0);
-      const [maxNoteIndex, setMaxNoteIndex] = useState(allNotes.length - 1);
+      // Preset ranges
+      const presets = {
+        beginner: { min: 20, max: 27, name: 'Beginner' }, // G to C
+        staff: { min: 16, max: 34, name: 'Staff Notes' }, // E to F
+        extended: { min: 10, max: 40, name: 'Extended' }, // Low C to High A
+        full: { min: 0, max: 51, name: 'Full Range' }
+      };
+
+      const [minNoteIndex, setMinNoteIndex] = useState(20); // Start with beginner range
+      const [maxNoteIndex, setMaxNoteIndex] = useState(27);
       const [currentNote, setCurrentNote] = useState(null);
       const [noteName, setNoteName] = useState('');
       const [accidental, setAccidental] = useState('');
@@ -82,12 +90,10 @@
       const [feedback, setFeedback] = useState(null);
       const [remainingNotes, setRemainingNotes] = useState([]);
       const [fingeringEnabled, setFingeringEnabled] = useState(true);
-      const [includeAccidentals, setIncludeAccidentals] = useState(true);
+      const [isDragging, setIsDragging] = useState(null);
+      const sliderRef = useRef(null);
 
-      // Get filtered notes based on range selection and accidentals toggle
-      const notes = allNotes
-        .slice(minNoteIndex, maxNoteIndex + 1)
-        .filter(note => includeAccidentals || note.accidental === '');
+      const notes = allNotes.slice(minNoteIndex, maxNoteIndex + 1);
 
       const selectNextNote = () => {
         const currentNoteIds = notes.map(n => `${n.name}-${n.line}`);
@@ -119,12 +125,51 @@
         setValves([0, 0, 0]);
       }, [fingeringEnabled]);
 
+      const setPreset = (preset) => {
+        setMinNoteIndex(preset.min);
+        setMaxNoteIndex(preset.max);
+      };
+
+      const handleSliderMouseDown = (e, handle) => {
+        e.preventDefault();
+        setIsDragging(handle);
+      };
+
+      const handleSliderMove = (e) => {
+        if (!isDragging || !sliderRef.current) return;
+        
+        const rect = sliderRef.current.getBoundingClientRect();
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const x = Math.max(0, Math.min(clientX - rect.left, rect.width));
+        const percentage = x / rect.width;
+        const index = Math.round(percentage * (allNotes.length - 1));
+        
+        if (isDragging === 'min') {
+          setMinNoteIndex(Math.min(index, maxNoteIndex));
+        } else {
+          setMaxNoteIndex(Math.max(index, minNoteIndex));
+        }
+      };
+
+      const handleSliderEnd = () => {
+        setIsDragging(null);
+      };
+
       useEffect(() => {
-        setFeedback(null);
-        setNoteName('');
-        setAccidental('');
-        selectNextNote();
-      }, [includeAccidentals]);
+        if (isDragging) {
+          document.addEventListener('mousemove', handleSliderMove);
+          document.addEventListener('mouseup', handleSliderEnd);
+          document.addEventListener('touchmove', handleSliderMove);
+          document.addEventListener('touchend', handleSliderEnd);
+          
+          return () => {
+            document.removeEventListener('mousemove', handleSliderMove);
+            document.removeEventListener('mouseup', handleSliderEnd);
+            document.removeEventListener('touchmove', handleSliderMove);
+            document.removeEventListener('touchend', handleSliderEnd);
+          };
+        }
+      }, [isDragging, minNoteIndex, maxNoteIndex]);
 
       const toggleValve = (index) => {
         const newValves = [...valves];
@@ -192,19 +237,6 @@
                   stroke="#333"
                   strokeWidth="2.5"
                 />
-                
-                {/* Redraw staff line through note if note is on a line (not a space) */}
-                {currentNote.line >= 0 && currentNote.line <= 4 && currentNote.line % 1 === 0 && (
-                  <line
-                    x1="165"
-                    y1={staffY + (4 - currentNote.line) * lineSpacing}
-                    x2="215"
-                    y2={staffY + (4 - currentNote.line) * lineSpacing}
-                    stroke="#333"
-                    strokeWidth="2"
-                  />
-                )}
-                
                 {currentNote.accidental && (
                   <text
                     x="160"
@@ -263,6 +295,9 @@
         );
       };
 
+      const minPercentage = (minNoteIndex / (allNotes.length - 1)) * 100;
+      const maxPercentage = (maxNoteIndex / (allNotes.length - 1)) * 100;
+
       return (
         <div className="min-h-screen bg-gray-50 p-8">
           <div className="max-w-2xl mx-auto">
@@ -283,46 +318,76 @@
                 <label className="block text-sm font-medium text-gray-700 mb-3">
                   Note Range
                 </label>
-                <div className="flex gap-4 items-center">
-                  <div className="flex-1">
-                    <label className="block text-xs text-gray-600 mb-1">From:</label>
-                    <select
-                      value={minNoteIndex}
-                      onChange={(e) => {
-                        const newMin = parseInt(e.target.value);
-                        setMinNoteIndex(newMin);
-                        if (maxNoteIndex < newMin) {
-                          setMaxNoteIndex(newMin);
-                        }
-                      }}
-                      className="w-full px-3 py-2 border-2 border-gray-300 rounded-lg focus:outline-none focus:border-blue-500"
+                
+                {/* Preset Buttons */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
+                  {Object.entries(presets).map(([key, preset]) => (
+                    <button
+                      key={key}
+                      onClick={() => setPreset(preset)}
+                      className={`py-2 px-3 rounded-lg text-sm font-medium transition-all ${
+                        minNoteIndex === preset.min && maxNoteIndex === preset.max
+                          ? 'bg-blue-600 text-white border-2 border-blue-600'
+                          : 'bg-white text-gray-700 border-2 border-gray-300 hover:border-blue-400'
+                      }`}
                     >
-                      {allNotes.map((note, index) => (
-                        <option key={index} value={index}>
-                          {note.displayName}
-                        </option>
-                      ))}
-                    </select>
+                      {preset.name}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Dual Range Slider */}
+                <div className="relative pt-2 pb-8">
+                  <div 
+                    ref={sliderRef}
+                    className="relative h-2 bg-gray-200 rounded-full cursor-pointer"
+                    onMouseDown={(e) => {
+                      const rect = sliderRef.current.getBoundingClientRect();
+                      const x = e.clientX - rect.left;
+                      const percentage = x / rect.width;
+                      const index = Math.round(percentage * (allNotes.length - 1));
+                      
+                      const distToMin = Math.abs(index - minNoteIndex);
+                      const distToMax = Math.abs(index - maxNoteIndex);
+                      
+                      if (distToMin < distToMax) {
+                        handleSliderMouseDown(e, 'min');
+                      } else {
+                        handleSliderMouseDown(e, 'max');
+                      }
+                    }}
+                  >
+                    {/* Active Range */}
+                    <div 
+                      className="absolute h-full bg-blue-500 rounded-full"
+                      style={{
+                        left: `${minPercentage}%`,
+                        width: `${maxPercentage - minPercentage}%`
+                      }}
+                    />
+                    
+                    {/* Min Handle */}
+                    <div
+                      className="absolute w-6 h-6 bg-white border-4 border-blue-500 rounded-full cursor-grab active:cursor-grabbing transform -translate-x-1/2 -translate-y-1/2 top-1/2 touch-none"
+                      style={{ left: `${minPercentage}%` }}
+                      onMouseDown={(e) => handleSliderMouseDown(e, 'min')}
+                      onTouchStart={(e) => handleSliderMouseDown(e, 'min')}
+                    />
+                    
+                    {/* Max Handle */}
+                    <div
+                      className="absolute w-6 h-6 bg-white border-4 border-blue-500 rounded-full cursor-grab active:cursor-grabbing transform -translate-x-1/2 -translate-y-1/2 top-1/2 touch-none"
+                      style={{ left: `${maxPercentage}%` }}
+                      onMouseDown={(e) => handleSliderMouseDown(e, 'max')}
+                      onTouchStart={(e) => handleSliderMouseDown(e, 'max')}
+                    />
                   </div>
-                  <div className="flex-1">
-                    <label className="block text-xs text-gray-600 mb-1">To:</label>
-                    <select
-                      value={maxNoteIndex}
-                      onChange={(e) => {
-                        const newMax = parseInt(e.target.value);
-                        setMaxNoteIndex(newMax);
-                        if (minNoteIndex > newMax) {
-                          setMinNoteIndex(newMax);
-                        }
-                      }}
-                      className="w-full px-3 py-2 border-2 border-gray-300 rounded-lg focus:outline-none focus:border-blue-500"
-                    >
-                      {allNotes.map((note, index) => (
-                        <option key={index} value={index}>
-                          {note.displayName}
-                        </option>
-                      ))}
-                    </select>
+                  
+                  {/* Note Labels */}
+                  <div className="flex justify-between mt-2 text-xs text-gray-600">
+                    <span className="font-medium">{allNotes[minNoteIndex].displayName}</span>
+                    <span className="text-gray-400">to</span>
+                    <span className="font-medium">{allNotes[maxNoteIndex].displayName}</span>
                   </div>
                 </div>
               </div>
@@ -337,20 +402,6 @@
                   />
                   <span className="text-sm font-medium text-gray-700">
                     Include Valve Fingering
-                  </span>
-                </label>
-              </div>
-
-              <div className="mb-6">
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={includeAccidentals}
-                    onChange={(e) => setIncludeAccidentals(e.target.checked)}
-                    className="w-5 h-5 cursor-pointer"
-                  />
-                  <span className="text-sm font-medium text-gray-700">
-                    Include Sharps and Flats
                   </span>
                 </label>
               </div>
