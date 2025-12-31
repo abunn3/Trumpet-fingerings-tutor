@@ -90,10 +90,13 @@
       const [feedback, setFeedback] = useState(null);
       const [remainingNotes, setRemainingNotes] = useState([]);
       const [fingeringEnabled, setFingeringEnabled] = useState(true);
+      const [includeAccidentals, setIncludeAccidentals] = useState(true);
       const [isDragging, setIsDragging] = useState(null);
       const sliderRef = useRef(null);
 
-      const notes = allNotes.slice(minNoteIndex, maxNoteIndex + 1);
+      const notes = allNotes
+        .slice(minNoteIndex, maxNoteIndex + 1)
+        .filter(note => includeAccidentals || note.accidental === '');
 
       const selectNextNote = () => {
         const currentNoteIds = notes.map(n => `${n.name}-${n.line}`);
@@ -124,6 +127,13 @@
         setFeedback(null);
         setValves([0, 0, 0]);
       }, [fingeringEnabled]);
+
+      useEffect(() => {
+        setFeedback(null);
+        setNoteName('');
+        setAccidental('');
+        selectNextNote();
+      }, [includeAccidentals]);
 
       const setPreset = (preset) => {
         setMinNoteIndex(preset.min);
@@ -402,6 +412,20 @@
                   />
                   <span className="text-sm font-medium text-gray-700">
                     Include Valve Fingering
+                  </span>
+                </label>
+              </div>
+
+              <div className="mb-6">
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={includeAccidentals}
+                    onChange={(e) => setIncludeAccidentals(e.target.checked)}
+                    className="w-5 h-5 cursor-pointer"
+                  />
+                  <span className="text-sm font-medium text-gray-700">
+                    Include Sharps and Flats
                   </span>
                 </label>
               </div>
